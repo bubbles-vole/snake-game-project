@@ -3,6 +3,9 @@
 import curses
 import random
 import time
+import json
+import re
+import os
 
 class SnakeGame:
     def __init__(self):
@@ -12,6 +15,7 @@ class SnakeGame:
         self.obstacles = []
         self.last_move_time = time.time()
         self.move_interval = 1.0  # Move once per second
+        self.leaderboard_file = 'leaderboard.json'
         
     def setup_screen(self, stdscr):
         """Initialize the game screen"""
@@ -189,33 +193,230 @@ class SnakeGame:
                 self.game_over = True
                 
         return None
+    
+    def load_leaderboard(self):
+        """Load leaderboard from JSON file"""
+        try:
+            with open(self.leaderboard_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Create default leaderboard if file doesn't exist or is corrupted
+            return {"easy": [], "medium": [], "hard": [], "insane": []}
+    
+    def save_leaderboard(self, leaderboard):
+        """Save leaderboard to JSON file"""
+        try:
+            with open(self.leaderboard_file, 'w') as f:
+                json.dump(leaderboard, f, indent=2)
+        except Exception as e:
+            print(f"Error saving leaderboard: {e}")
+    
+    def is_high_score(self, score, difficulty):
+        """Check if the score qualifies for the leaderboard"""
+        leaderboard = self.load_leaderboard()
+        difficulty_scores = leaderboard.get(difficulty, [])
+        
+        # Always qualify if less than 10 scores
+        if len(difficulty_scores) < 10:
+            return True
+        
+        # Check if score is higher than the lowest score
+        lowest_score = min(entry['score'] for entry in difficulty_scores)
+        return score > lowest_score
+    
+    def add_high_score(self, name, score, difficulty):
+        """Add a high score to the leaderboard"""
+        leaderboard = self.load_leaderboard()
+        
+        # Add new score
+        new_entry = {"name": name, "score": score}
+        leaderboard[difficulty].append(new_entry)
+        
+        # Sort by score (descending) and keep only top 10
+        leaderboard[difficulty].sort(key=lambda x: x['score'], reverse=True)
+        leaderboard[difficulty] = leaderboard[difficulty][:10]
+        
+        # Save updated leaderboard
+        self.save_leaderboard(leaderboard)
+    
+    def get_player_name(self, stdscr):
+        """Get player name for high score entry with input validation"""
+        stdscr.nodelay(0)  # Make input blocking for name entry
+        curses.curs_set(1)  # Show cursor
+        
+        while True:
+            stdscr.clear()
+            height, width = stdscr.getmaxyx()
             
-    def show_start_menu(self, stdscr):
-        """Show start menu for difficulty selection"""
+            # Display prompts
+            congrats = "NEW HIGH SCORE!"
+            prompt = "Enter your name:"
+            note = "(Only letters and numbers allowed, max 20 characters)"
+            
+            stdscr.addstr(height//2-3, (width-len(congrats))//2, congrats)
+            stdscr.addstr(height//2-1, (width-len(prompt))//2, prompt)
+            stdscr.addstr(height//2, (width-len(note))//2, note)
+            
+            # Input area - create a small input box
+            input_y = height//2 + 2
+            input_x = (width - 22) // 2  # Center a 20-char input field
+            stdscr.addstr(input_y, input_x-2, "> ")
+            
+            # Draw input box
+            for i in range(22):
+                stdscr.addch(input_y, input_x + i, '_')
+            
+            stdscr.move(input_y, input_x)
+            stdscr.refresh()
+            
+            # Get input with echo enabled
+            curses.echo()
+            curses.curs_set(1)
+            try:
+                # Use a simpler input method
+                name = ""
+                while len(name) < 20:
+                    ch = stdscr.getch()
+                    if ch == 10 or ch == 13:  # Enter key
+                        break
+                    elif ch == 127 or ch == curses.KEY_BACKSPACE:  # Backspace
+                        if name:
+                            name = name[:-1]
+                            stdscr.move(input_y, input_x + len(name))
+                            stdscr.addch('_')
+                            stdscr.move(input_y, input_x + len(name))
+                    elif ch >= 32 and ch <= 126:  # Printable characters
+                        char = chr(ch)
+                        if char.isalnum():  # Only allow alphanumeric
+                            name += char
+                            stdscr.addch(char)
+                    stdscr.refresh()
+            except:
+                name = ""
+            finally:
+                curses.noecho()
+                curses.curs_set(0)
+            
+            # Validate input
+            if re.match(r'^[a-zA-Z0-9]+$', name) and 1 <= len(name) <= 20:
+                stdscr.nodelay(1)  # Restore non-blocking input
+                return name.upper()
+            else:
+                # Show error message
+                stdscr.clear()
+                stdscr.addstr(height//2-3, (width-len(congrats))//2, congrats)
+                error = "Invalid name! Please try again."
+                reason = "Name must contain only letters and numbers (1-20 characters)"
+                stdscr.addstr(height//2-1, (width-len(error))//2, error)
+                stdscr.addstr(height//2, (width-len(reason))//2, reason)
+                stdscr.addstr(height//2+2, (width-25)//2, "Press any key to continue...")
+                stdscr.refresh()
+                stdscr.getch()
+    
+    def show_leaderboard(self, stdscr):
+        """Display the leaderboard"""
+        leaderboard = self.load_leaderboard()
+        
+        while True:
+            stdscr.clear()
+            height, width = stdscr.getmaxyx()
+            
+            title = "HIGH SCORES"
+            stdscr.addstr(2, (width-len(title))//2, title)
+            
+            # Display scores for each difficulty
+            y_pos = 4
+            for difficulty in ['easy', 'medium', 'hard', 'insane']:
+                diff_title = f"{difficulty.upper()} DIFFICULTY"
+                if y_pos < height - 2:
+                    stdscr.addstr(y_pos, (width-len(diff_title))//2, diff_title)
+                    y_pos += 1
+                
+                scores = leaderboard.get(difficulty, [])
+                if not scores:
+                    no_scores = "No scores yet"
+                    if y_pos < height - 2:
+                        stdscr.addstr(y_pos, (width-len(no_scores))//2, no_scores)
+                        y_pos += 2
+                else:
+                    for i, entry in enumerate(scores[:5]):  # Show top 5 per difficulty
+                        if y_pos < height - 2:
+                            score_line = f"{i+1:2}. {entry['name']:<15} {entry['score']:>6}"
+                            stdscr.addstr(y_pos, (width-len(score_line))//2, score_line)
+                            y_pos += 1
+                    y_pos += 1
+            
+            # Instructions
+            if y_pos < height - 2:
+                instructions = "Press any key to return to menu"
+                stdscr.addstr(height-2, (width-len(instructions))//2, instructions)
+            
+            stdscr.refresh()
+            stdscr.getch()
+            break
+            
+    def show_main_menu(self, stdscr):
+        """Show main menu"""
+        while True:
+            curses.curs_set(0)
+            stdscr.clear()
+            
+            height, width = stdscr.getmaxyx()
+            
+            # Menu options
+            title = "SNAKE GAME"
+            options = [
+                "1. Play Game",
+                "2. High Scores",
+                "3. Quit"
+            ]
+            instructions = "Press 1, 2, or 3 to select option"
+            
+            # Display menu
+            stdscr.addstr(height//2-3, (width-len(title))//2, title)
+            
+            for i, option in enumerate(options):
+                stdscr.addstr(height//2+i-1, (width-len(option))//2, option)
+                
+            stdscr.addstr(height//2+4, (width-len(instructions))//2, instructions)
+            stdscr.refresh()
+            
+            # Get user selection
+            key = stdscr.getch()
+            if key == ord('1'):
+                # Play game - show difficulty selection
+                if self.show_difficulty_menu(stdscr):
+                    return 'play'
+            elif key == ord('2'):
+                # Show high scores
+                self.show_leaderboard(stdscr)
+            elif key == ord('3') or key == ord('q') or key == 27:
+                return 'quit'
+    
+    def show_difficulty_menu(self, stdscr):
+        """Show difficulty selection menu"""
         curses.curs_set(0)
         stdscr.clear()
         
         height, width = stdscr.getmaxyx()
         
         # Menu options
-        title = "SNAKE GAME"
-        subtitle = "Select Difficulty:"
+        title = "SELECT DIFFICULTY"
         options = [
             "1. Easy (No obstacles, 0.6s speed)",
             "2. Medium (5 obstacles, 0.3s speed)", 
             "3. Hard (10 obstacles, 0.2s speed)",
             "4. Insane (15 obstacles, 0.05s speed)"
         ]
-        instructions = "Press 1, 2, 3, or 4 to select difficulty, or 'q' to quit"
+        instructions = "Press 1, 2, 3, or 4 to select difficulty, ESC to return"
         
         # Display menu
         stdscr.addstr(height//2-4, (width-len(title))//2, title)
-        stdscr.addstr(height//2-2, (width-len(subtitle))//2, subtitle)
         
         for i, option in enumerate(options):
             stdscr.addstr(height//2+i-1, (width-len(option))//2, option)
             
-        stdscr.addstr(height//2+4, (width-len(instructions))//2, instructions)
+        stdscr.addstr(height//2+5, (width-len(instructions))//2, instructions)
         stdscr.refresh()
         
         # Get user selection
@@ -223,27 +424,26 @@ class SnakeGame:
             key = stdscr.getch()
             if key == ord('1'):
                 self.difficulty = 'easy'
-                break
+                return True
             elif key == ord('2'):
                 self.difficulty = 'medium'
-                break
+                return True
             elif key == ord('3'):
                 self.difficulty = 'hard'
-                break
+                return True
             elif key == ord('4'):
                 self.difficulty = 'insane'
-                break
-            elif key == ord('q') or key == 27:
+                return True
+            elif key == 27:  # ESC
                 return False
-                
-        return True
         
-    def game_loop(self, stdscr):
-        """Main game loop"""
-        # Show start menu
-        if not self.show_start_menu(stdscr):
-            return
-            
+    def play_game(self, stdscr):
+        """Play a single game"""
+        # Reset game state
+        self.score = 0
+        self.game_over = False
+        self.last_move_time = time.time()
+        
         self.setup_screen(stdscr)
         
         # Draw initial game state
@@ -318,25 +518,44 @@ class SnakeGame:
             # Small delay to prevent excessive CPU usage
             time.sleep(0.01)
             
-        # Game over screen
-        self.show_game_over()
+        # Game over - handle high scores
+        self.show_game_over(stdscr)
+    
+    def game_loop(self, stdscr):
+        """Main game loop with menu system"""
+        while True:
+            menu_choice = self.show_main_menu(stdscr)
+            
+            if menu_choice == 'play':
+                self.play_game(stdscr)
+            elif menu_choice == 'quit':
+                break
         
-    def show_game_over(self):
-        """Show game over screen"""
-        self.win.clear()
-        self.win.border(0)
+    def show_game_over(self, stdscr):
+        """Show game over screen and handle high scores"""
+        # Check if this is a high score
+        if self.is_high_score(self.score, self.difficulty):
+            # Get player name and add to leaderboard
+            player_name = self.get_player_name(stdscr)
+            self.add_high_score(player_name, self.score, self.difficulty)
+        
+        # Show game over screen
+        stdscr.clear()
+        height, width = stdscr.getmaxyx()
         
         game_over_text = "GAME OVER!"
         final_score = f"Final Score: {self.score}"
-        restart_text = "Press any key to exit"
+        difficulty_text = f"Difficulty: {self.difficulty.capitalize()}"
+        return_text = "Press any key to return to main menu"
         
         # Center the text
-        self.win.addstr(self.height//2-1, (self.width-len(game_over_text))//2, game_over_text)
-        self.win.addstr(self.height//2, (self.width-len(final_score))//2, final_score)
-        self.win.addstr(self.height//2+1, (self.width-len(restart_text))//2, restart_text)
+        stdscr.addstr(height//2-2, (width-len(game_over_text))//2, game_over_text)
+        stdscr.addstr(height//2-1, (width-len(final_score))//2, final_score)
+        stdscr.addstr(height//2, (width-len(difficulty_text))//2, difficulty_text)
+        stdscr.addstr(height//2+2, (width-len(return_text))//2, return_text)
         
-        self.win.refresh()
-        self.win.getch()  # Wait for any key press
+        stdscr.refresh()
+        stdscr.getch()  # Wait for any key press
         
 def main():
     """Main function to start the game"""
@@ -346,7 +565,7 @@ def main():
     except KeyboardInterrupt:
         pass
     
-    print(f"\nThanks for playing! Final score: {game.score}")
+    print("\nThanks for playing Snake Game!")
 
 if __name__ == "__main__":
     main()
