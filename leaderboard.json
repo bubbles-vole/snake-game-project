@@ -1,6 +1,21 @@
 {
   "easy": [],
-  "medium": [],
-  "hard": [],
-  "insane": []
+  "medium": [
+    {
+      "name": "ADAM",
+      "score": 10
+    }
+  ],
+  "hard": [
+    {
+      "name": "DASFDSFDFSDFSDFS",
+      "score": 0
+    }
+  ],
+  "insane": [
+    {
+      "name": "A",
+      "score": 0
+    }
+  ]
 }
