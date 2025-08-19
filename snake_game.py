@@ -273,8 +273,8 @@ class SnakeGame:
             stdscr.move(input_y, input_x)
             stdscr.refresh()
             
-            # Get input with echo enabled
-            curses.echo()
+            # Get input without echo to avoid double characters
+            curses.noecho()
             curses.curs_set(1)
             try:
                 # Use a simpler input method
