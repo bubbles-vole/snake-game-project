@@ -6,6 +6,10 @@ import time
 import json
 import re
 import os
+import traceback
+import sys
+from datetime import datetime
+import platform
 
 class SnakeGame:
     def __init__(self):
@@ -446,23 +450,43 @@ class SnakeGame:
         
         self.setup_screen(stdscr)
         
-        # Draw initial game state
-        self.win.border(0)
-        self.draw_snake()
-        self.draw_obstacles()
-        self.draw_food()
-        self.draw_score()
-        difficulty_text = f"Difficulty: {self.difficulty.capitalize()}"
-        self.win.addstr(0, self.width-len(difficulty_text)-2, difficulty_text)
-        instructions = "Arrow keys: change/boost direction, 'q': quit"
-        self.win.addstr(self.height-1, 2, instructions[:self.width-4])
-        self.win.refresh()
+        # Wrap in try/except for crash reporting
+        try:
+            # Draw initial game state
+            self.win.border(0)
+            self.draw_snake()
+            self.draw_obstacles()
+            self.draw_food()
+            self.draw_score()
+        except Exception as e:
+            curses.endwin()
+            raise e
+        
+        try:
+            # Draw initial game state
+            self.win.border(0)
+            self.draw_snake()
+            self.draw_obstacles()
+            self.draw_food()
+            self.draw_score()
+            difficulty_text = f"Difficulty: {self.difficulty.capitalize()}"
+            self.win.addstr(0, self.width-len(difficulty_text)-2, difficulty_text)
+            instructions = "Arrow keys: change/boost direction, 'q': quit"
+            self.win.addstr(self.height-1, 2, instructions[:self.width-4])
+            self.win.refresh()
+        except Exception as e:
+            curses.endwin()
+            raise e
         
         while not self.game_over:
-            current_time = time.time()
-            
-            # Get input (non-blocking) - check for forced movement
-            input_result = self.get_input()
+            try:
+                current_time = time.time()
+                
+                # Get input (non-blocking) - check for forced movement
+                input_result = self.get_input()
+            except Exception as e:
+                curses.endwin()
+                raise e
             
             # Check if we should move (either automatic timing or forced)
             should_move = False
@@ -478,48 +502,56 @@ class SnakeGame:
                     should_move = True
             
             if should_move:
-                # Store old tail position before moving
-                old_tail = self.snake[-1].copy() if len(self.snake) > 1 else None
-                
-                # Move snake
-                self.move_snake()
-                
-                # Check collisions
-                if self.check_collision():
-                    break
-                
-                # Only clear the old tail position if snake didn't grow
-                if old_tail and len(self.snake) > 1 and old_tail not in self.snake:
-                    self.win.addch(old_tail[0], old_tail[1], ' ')
-                
-                # Draw new head
-                head = self.snake[0]
-                self.win.addch(head[0], head[1], '@')
-                
-                # Update body (previous head becomes body)
-                if len(self.snake) > 1:
-                    prev_head = self.snake[1]
-                    self.win.addch(prev_head[0], prev_head[1], '*')
-                
-                # Draw food
-                self.draw_food()
-                
-                # Update score and difficulty display
-                self.draw_score()
-                difficulty_text = f"Difficulty: {self.difficulty.capitalize()}"
-                self.win.addstr(0, self.width-len(difficulty_text)-2, difficulty_text)
-                
-                # Update last move time
-                self.last_move_time = current_time
-                
-                # Refresh screen after movement
-                self.win.refresh()
+                try:
+                    # Store old tail position before moving
+                    old_tail = self.snake[-1].copy() if len(self.snake) > 1 else None
+                    
+                    # Move snake
+                    self.move_snake()
+                    
+                    # Check collisions
+                    if self.check_collision():
+                        break
+                    
+                    # Only clear the old tail position if snake didn't grow
+                    if old_tail and len(self.snake) > 1 and old_tail not in self.snake:
+                        self.win.addch(old_tail[0], old_tail[1], ' ')
+                    
+                    # Draw new head
+                    head = self.snake[0]
+                    self.win.addch(head[0], head[1], '@')
+                    
+                    # Update body (previous head becomes body)
+                    if len(self.snake) > 1:
+                        prev_head = self.snake[1]
+                        self.win.addch(prev_head[0], prev_head[1], '*')
+                    
+                    # Draw food
+                    self.draw_food()
+                    
+                    # Update score and difficulty display
+                    self.draw_score()
+                    difficulty_text = f"Difficulty: {self.difficulty.capitalize()}"
+                    self.win.addstr(0, self.width-len(difficulty_text)-2, difficulty_text)
+                    
+                    # Update last move time
+                    self.last_move_time = current_time
+                    
+                    # Refresh screen after movement
+                    self.win.refresh()
+                except Exception as e:
+                    curses.endwin()
+                    raise e
             
             # Small delay to prevent excessive CPU usage
             time.sleep(0.01)
             
         # Game over - handle high scores
-        self.show_game_over(stdscr)
+        try:
+            self.show_game_over(stdscr)
+        except Exception as e:
+            curses.endwin()
+            raise e
     
     def game_loop(self, stdscr):
         """Main game loop with menu system"""
@@ -557,15 +589,173 @@ class SnakeGame:
         stdscr.refresh()
         stdscr.getch()  # Wait for any key press
         
+def generate_crash_report(game, exception, exc_traceback):
+    """Generate a detailed crash report file"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Ensure logs directory exists
+    logs_dir = "logs"
+    if not os.path.exists(logs_dir):
+        try:
+            os.makedirs(logs_dir)
+        except Exception:
+            logs_dir = "."  # Fallback to current directory
+    
+    crash_filename = os.path.join(logs_dir, f"snake_game_crash_{timestamp}.txt")
+    
+    try:
+        with open(crash_filename, 'w') as f:
+            f.write("=" * 60 + "\n")
+            f.write("SNAKE GAME CRASH REPORT\n")
+            f.write("=" * 60 + "\n\n")
+            
+            # Timestamp
+            f.write(f"Crash Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            # System Information
+            f.write("SYSTEM INFORMATION:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Platform: {platform.platform()}\n")
+            f.write(f"Python Version: {sys.version}\n")
+            f.write(f"Operating System: {platform.system()} {platform.release()}\n")
+            f.write(f"Machine: {platform.machine()}\n")
+            f.write(f"Processor: {platform.processor()}\n\n")
+            
+            # Game State Information
+            f.write("GAME STATE AT CRASH:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Score: {getattr(game, 'score', 'Unknown')}\n")
+            f.write(f"Difficulty: {getattr(game, 'difficulty', 'Unknown')}\n")
+            f.write(f"Game Over: {getattr(game, 'game_over', 'Unknown')}\n")
+            
+            if hasattr(game, 'height') and hasattr(game, 'width'):
+                f.write(f"Screen Dimensions: {game.height}x{game.width}\n")
+            
+            if hasattr(game, 'snake'):
+                f.write(f"Snake Length: {len(game.snake)}\n")
+                f.write(f"Snake Head Position: {game.snake[0] if game.snake else 'Unknown'}\n")
+                f.write(f"Snake Body: {game.snake[:5]}{'...' if len(game.snake) > 5 else ''}\n")
+            
+            if hasattr(game, 'direction'):
+                direction_map = {
+                    curses.KEY_UP: 'UP',
+                    curses.KEY_DOWN: 'DOWN', 
+                    curses.KEY_LEFT: 'LEFT',
+                    curses.KEY_RIGHT: 'RIGHT'
+                }
+                f.write(f"Current Direction: {direction_map.get(game.direction, game.direction)}\n")
+            
+            if hasattr(game, 'move_interval'):
+                f.write(f"Move Interval: {game.move_interval}s\n")
+            
+            if hasattr(game, 'food'):
+                f.write(f"Food Position: {game.food}\n")
+            
+            if hasattr(game, 'obstacles'):
+                f.write(f"Number of Obstacles: {len(game.obstacles)}\n")
+                if game.obstacles:
+                    f.write(f"Obstacle Positions: {game.obstacles[:10]}{'...' if len(game.obstacles) > 10 else ''}\n")
+            
+            f.write("\n")
+            
+            # Exception Information
+            f.write("EXCEPTION DETAILS:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Exception Type: {type(exception).__name__}\n")
+            f.write(f"Exception Message: {str(exception)}\n\n")
+            
+            # Full Stack Trace
+            f.write("FULL STACK TRACE:\n")
+            f.write("-" * 30 + "\n")
+            f.write(''.join(traceback.format_exception(type(exception), exception, exc_traceback)))
+            
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("END OF CRASH REPORT\n")
+            f.write("=" * 60 + "\n")
+        
+        return crash_filename
+    except Exception as report_error:
+        try:
+            minimal_filename = os.path.join(logs_dir, f"snake_game_crash_minimal_{timestamp}.txt")
+            with open(minimal_filename, 'w') as f:
+                f.write(f"Snake Game crashed at {datetime.now()}\n")
+                f.write(f"Original exception: {exception}\n")
+                f.write(f"Crash report generation failed: {report_error}\n")
+                f.write(f"Report error: {traceback.format_exc()}\n")
+            return minimal_filename
+        except Exception as final_error:
+            # Last resort - try to write to current directory
+            try:
+                emergency_filename = f"snake_crash_emergency_{timestamp}.txt"
+                with open(emergency_filename, 'w') as f:
+                    f.write(f"Emergency crash log: {datetime.now()}\n")
+                    f.write(f"Original exception: {str(exception)}\n")
+                    f.write(f"Report generation failed: {str(report_error)}\n")
+                    f.write(f"Final error: {str(final_error)}\n")
+                return emergency_filename
+            except:
+                return None
+
 def main():
     """Main function to start the game"""
     game = SnakeGame()
-    try:
-        curses.wrapper(game.game_loop)
-    except KeyboardInterrupt:
-        pass
+    crash_report_file = None
     
-    print("\nThanks for playing Snake Game!")
+    try:
+        # Add immediate exception handling wrapper
+        def wrapped_game_loop(stdscr):
+            try:
+                game.game_loop(stdscr)
+            except Exception as inner_e:
+                curses.endwin()  # Ensure terminal is restored
+                raise inner_e
+        
+        curses.wrapper(wrapped_game_loop)
+    except KeyboardInterrupt:
+        print("\n🛑 Game interrupted by user (Ctrl+C)")
+    except Exception as e:
+        # Always try to generate crash report, even if game object is incomplete
+        try:
+            crash_report_file = generate_crash_report(game, e, sys.exc_info()[2])
+        except Exception as report_gen_error:
+            print(f"\n💥 Double fault: Crash report generation also failed!")
+            print(f"Report error: {report_gen_error}")
+            # Try to create a super minimal crash log
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                emergency_file = f"logs/emergency_crash_{timestamp}.txt" if os.path.exists("logs") else f"emergency_crash_{timestamp}.txt"
+                with open(emergency_file, 'w') as f:
+                    f.write(f"EMERGENCY CRASH LOG - {datetime.now()}\n")
+                    f.write(f"Original crash: {type(e).__name__}: {e}\n")
+                    f.write(f"Report generation error: {report_gen_error}\n")
+                    f.write(f"Full trace:\n{traceback.format_exc()}\n")
+                crash_report_file = emergency_file
+            except:
+                pass
+        
+        print(f"\n❌ Snake Game crashed unexpectedly!")
+        print(f"Exception: {type(e).__name__}: {e}")
+        
+        if crash_report_file:
+            print(f"\n📝 Crash report saved to: {crash_report_file}")
+            print("Please check this file for detailed information about the crash.")
+        else:
+            print(f"\n⚠️  Could not generate crash report file.")
+            print(f"\n🔍 Debug info:")
+            print(f"   Current working directory: {os.getcwd()}")
+            print(f"   Logs directory exists: {os.path.exists('logs')}")
+            print(f"   Can write to current dir: {os.access('.', os.W_OK)}")
+        
+        print("\nSimplified error trace:")
+        traceback.print_exc(limit=3)
+        
+        return  # Exit without showing normal completion message
+    
+    # Only show this if game completed normally
+    if hasattr(game, 'score'):
+        print(f"\nThanks for playing! Final score: {game.score}")
+    else:
+        print(f"\nThanks for playing!")
 
 if __name__ == "__main__":
     main()
